@@ -1,0 +1,27 @@
+# === Datos Sensibles ===
+# Contiene contraseñas y variables de entorno. NUNCA se sube.
+.env
+
+# === Persistencia de Datos ===
+# No queremos subir los archivos binarios de la base de datos (pueden ser GBs)
+data/
+
+# === Backups ===
+# Las copias de seguridad se gestionan localmente en el servidor
+backups/
+
+# === Archivos de Sistema / IDEs ===
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editores (VS Code, JetBrains)
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === Docker ===
+# Ignorar logs de docker (si es que redireccionas logs a archivos)
+*.log
