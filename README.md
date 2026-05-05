@@ -1,75 +1,171 @@
-🐘 PostgreSQL Stack: PostGIS + TimescaleDB
-Este repositorio contiene la configuración de infraestructura basada en Docker para una instancia de PostgreSQL 16 optimizada, que incluye soporte para datos geoespaciales y series de tiempo.
+# 🐘 PostgreSQL Stack: PostGIS + TimescaleDB
 
-🚀 Características
-Motor: PostgreSQL 16.
+Este repositorio proporciona una infraestructura robusta basada en Docker para una instancia de **PostgreSQL 16**, diseñada específicamente para proyectos que requieren capacidades geoespaciales avanzadas y manejo eficiente de series de tiempo.
 
-Extensiones: PostGIS (Geoespacial) y TimescaleDB (Series de tiempo).
+---
 
-Backups: Automatizados (diarios) con rotación de 7 días.
+## 🚀 Características Principales
 
-Seguridad: Configurado para acceso restringido y gestión de credenciales vía .env.
+| Componente | Detalle |
+|---|---|
+| Motor | PostgreSQL 16 |
+| Geoespacial | PostGIS |
+| Series de Tiempo | TimescaleDB |
+| Backups | Automatizados (diarios) con rotación de 7 días |
+| Monitoreo | Healthcheck integrado para asegurar disponibilidad |
+| Seguridad | Gestión de credenciales mediante variables de entorno |
 
-Salud: Monitoreo mediante healthcheck para asegurar disponibilidad.
+---
 
-## 📦 Contents
+## 📦 Estructura del Proyecto
 
-The repository includes everything required to **run the database locally using Docker**:
-
-```text
+```
 .
-├── docker-compose.yml        # Database service definition
-├── Dockerfile                # PostgreSQL 16 image with extensions
-├── scripts/                  # Scripts to install PostGIS, TimescaleDB, etc.
-├── init/                     # SQL initialization scripts (schema, enums, base data)
-├── schema                    # Core database schema (users, roles, memberships, profiles, projects)
-└── README.md
+├── docker-compose.yml   # Definición de servicios (DB + Backup)
+├── Dockerfile           # Imagen personalizada de Postgres 16 + Extensiones
+├── scripts/             # Scripts de instalación de extensiones
+├── init/                # SQL de inicialización (esquemas y datos base)
+├── schema/              # Definición del core (usuarios, roles, proyectos)
+└── backups/             # Directorio local para copias de seguridad
+```
 
-🏗️ Despliegue
-1. Construir y levantar
-Para iniciar el servicio por primera vez o después de cambios en el Dockerfile:
+---
 
-Bash
+## 🛠️ Configuración Inicial
+
+Antes de levantar los contenedores, configura las variables de entorno:
+
+**1. Clonar el archivo de ejemplo:**
+
+```bash
+cp .env.example .env
+```
+
+**2. Configurar credenciales:**
+
+Abre el archivo `.env` y modifica los valores de conexión:
+
+```env
+POSTGRES_USER=tu_usuario
+POSTGRES_PASSWORD=tu_contraseña_segura
+POSTGRES_DB=nombre_db
+```
+
+---
+
+## 🏗️ Despliegue
+
+### 1. Construir y Levantar
+
+Para iniciar el servicio por primera vez o después de realizar cambios en el `Dockerfile`:
+
+```bash
 docker compose up -d --build
-2. Verificar estado
+```
+
+### 2. Verificar Estado
+
 El contenedor realiza un chequeo de salud cada 10 segundos:
 
-Bash
+```bash
 docker compose ps
-Debe mostrar estado (healthy).
+```
 
-3. Ver Logs
-Para monitorear la inicialización y ejecución de scripts:
+> El estado debe aparecer como `(healthy)`.
 
-Bash
+### 3. Monitoreo de Logs
+
+Para revisar la inicialización de los scripts o el estado de las extensiones:
+
+```bash
 docker compose logs -f db
+```
 
-💾 Plan de Backups
-El servicio backup realiza una copia completa de la base de datos cada medianoche (Schedule: @daily).
+---
 
-Ubicación: Carpeta ./backups.
+## 💾 Backups y Recuperación
 
-Compresión: Formato .sql.gz (Z9 - Máxima compresión).
+### ¿Cómo funciona el Backup?
 
-Retención: Se conservan automáticamente los últimos 7 días.
+El servicio usa la imagen `prodrigestivill/postgres-backup-local`, que ejecuta `pg_dump` internamente para exportar toda la base de datos a un archivo `.sql.gz`.
 
-🔒 Notas de Seguridad
-Acceso: El puerto expuesto es el 51432 (mapeado internamente al 5432).
+```
+[Contenedor db] → (cada medianoche) → pg_dump → archivo .sql.gz → [./backups/]
+```
 
-Git: Nunca subas la carpeta data/ ni el archivo .env al repositorio.
+| Variable | Valor | Qué hace |
+|---|---|---|
+| `SCHEDULE` | `@daily` | Ejecuta el backup a medianoche |
+| `BACKUP_KEEP_DAYS` | `7` | Borra backups con más de 7 días |
+| `POSTGRES_EXTRA_OPTS` | `-Z9` | Compresión máxima del archivo |
 
-Persistencia: Los datos se guardan en el volumen local ./data, lo que permite destruir los contenedores sin perder la información.
+Los archivos se guardan con el formato:
+```
+nombre_db-2026-05-05T000000Z.sql.gz
+```
 
-⌨️ Comandos Útiles
-Entrar a consola SQL:
+### Backup Manual
 
-Bash
+Si no quieres esperar al horario automático:
+
+```bash
+docker exec amtec-db-sc pg_dump -U tu_usuario -d tu_base_datos | gzip -9 > ./backups/manual-$(date +%Y%m%d).sql.gz
+```
+
+### Recuperación (Restore)
+
+**1. Ver los backups disponibles:**
+
+```bash
+ls -lh ./backups/
+```
+
+**2. Descomprimir el archivo:**
+
+```bash
+gunzip ./backups/nombre_db-2026-05-05T000000Z.sql.gz
+```
+
+**3. Restaurar en la base de datos:**
+
+```bash
+docker exec -i amtec-db-sc psql -U tu_usuario -d tu_base_datos < ./backups/nombre_db-2026-05-05T000000Z.sql
+```
+
+> Si quieres un restore limpio sin datos previos, primero recrea la base de datos:
+> ```bash
+> docker exec -it amtec-db-sc psql -U tu_usuario -c "DROP DATABASE tu_base_datos;"
+> docker exec -it amtec-db-sc psql -U tu_usuario -c "CREATE DATABASE tu_base_datos;"
+> ```
+
+El backup incluye **esquema + datos**, por lo que la restauración recrea tablas, índices, extensiones (PostGIS, TimescaleDB) y todos los registros tal como estaban al momento del backup.
+
+---
+
+## 🔒 Notas de Seguridad y Persistencia
+
+- **Puertos:** La base de datos es accesible externamente a través del puerto `51432` (mapeado al `5432` interno).
+- **Git:** La carpeta `data/` y el archivo `.env` están excluidos del control de versiones.
+- **Volúmenes:** Se utiliza el volumen local `./data` para la persistencia — puedes reiniciar o borrar los contenedores sin perder datos.
+
+---
+
+## ⌨️ Comandos Útiles
+
+**Acceder a la terminal de PostgreSQL:**
+
+```bash
 docker exec -it amtec-db-sc psql -U tu_usuario -d tu_base_datos
-Detener servicios:
+```
 
-Bash
+**Detener los servicios:**
+
+```bash
 docker compose stop
-Limpieza total (Borra contenedores y redes):
+```
 
-Bash
+**Limpieza total (borra contenedores y redes):**
+
+```bash
 docker compose down
+```
